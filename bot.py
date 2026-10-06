@@ -1,14 +1,33 @@
 import os
 import datetime
+import threading
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler
 from telegram.error import Forbidden
 from database import Database
 from bson import ObjectId
+from flask import Flask
 
 load_dotenv()
 
+# =========================================================================
+# SERVIDOR FLASK (Para mantener feliz a Render en su capa gratuita)
+# =========================================================================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "🤖 ¡El Bot de RemindMe está activo y funcionando en la nube 24/7!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
+
+
+# =========================================================================
+# CLASE PRINCIPAL DEL BOT DE TELEGRAM
+# =========================================================================
 class RemindMeBot:
     def __init__(self):
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -36,7 +55,6 @@ class RemindMeBot:
         user_doc = users_col.find_one({"telegramId": chat_id_str})
 
         if user_doc:
-            # Si el usuario se vuelve a conectar, nos aseguramos de reactivar su estado en la BD
             users_col.update_one({"_id": user_doc["_id"]}, {"$set": {"telegramActive": True}})
 
             await update.message.reply_text(
@@ -126,7 +144,6 @@ class RemindMeBot:
 
             user_doc = users_col.find_one({"_id": ObjectId(user_id)})
 
-            # Verificamos que el usuario exista y tenga activo su canal de Telegram
             if user_doc and user_doc.get("telegramId") and user_doc.get("telegramActive", True):
                 chat_id = user_doc.get("telegramId")
                 
@@ -158,15 +175,14 @@ class RemindMeBot:
                     print(f"✅ Recordatorio enviado exitosamente al chat_id: {chat_id}")
                     
                 except Forbidden:
-                    # Capturamos cuando el usuario bloquea el bot o elimina el chat
-                    print(f"⚠️️ [Aviso] El usuario con chat_id {chat_id} bloqueó el bot o cerró el chat. Actualizando estado en BD...")
+                    print(f"⚠ [Aviso] El usuario con chat_id {chat_id} bloqueó el bot. Actualizando estado en BD...")
                     users_col.update_one({"_id": ObjectId(user_id)}, {"$set": {"telegramActive": False}})
                     
                 except Exception as e:
                     print(f"❌ Error inesperado al enviar mensaje a Telegram: {e}")
 
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Atrapa el clic de los botones interactivos (Completar o Posponer) y actualiza la base de datos"""
+        """Atrapa el clic de los botones interactivos y actualiza la base de datos"""
         query = update.callback_query
         await query.answer()
 
@@ -213,9 +229,13 @@ class RemindMeBot:
             else:
                 await query.answer("⚠️ No se pudo posponer la tarea.", show_alert=True)
 
-# Registro del menú del bot para BotFather
     def run(self):
-        print("🤖 Bot de RemindMe blindado con manejo de bloqueos y motor activo...")
+        # Arrancamos Flask en segundo plano para atender el puerto web de Render
+        flask_thread = threading.Thread(target=run_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
+
+        print("🤖 Bot de RemindMe blindado con Flask y motor de Telegram activo...")
         self.app.run_polling()
 
 if __name__ == "__main__":
