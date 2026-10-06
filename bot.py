@@ -1,6 +1,7 @@
 import os
 import datetime
 import threading
+import asyncio  # <--- 1. Importamos asyncio aquí arriba
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler
@@ -236,6 +237,14 @@ class RemindMeBot:
         flask_thread.start()
 
         print("🤖 Bot de RemindMe blindado con Flask y motor de Telegram activo...")
+
+        # <--- 2. Configuramos el Event Loop explícitamente para evitar el RuntimeError en Render
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         self.app.run_polling()
 
 if __name__ == "__main__":
